@@ -7,9 +7,15 @@ on:
 jobs:
   call-wheels:
     uses: ./.github/workflows/wheels.yml
+    permissions:
+      contents: read
+      actions: write
 
   call-cuda-build:
     uses: ./.github/workflows/cuda-build.yml
+    permissions:
+      contents: read
+      actions: write
 
   publish-pypi:
     name: Publish to PyPI
@@ -21,6 +27,7 @@ jobs:
     permissions:
       id-token: write
       actions: read
+      contents: read
     steps:
       - name: Download all wheel artifacts
         uses: actions/download-artifact@v4
