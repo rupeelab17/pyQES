@@ -98,10 +98,29 @@ print(pyQES.__version__)  # e.g. 2.3.1
 ```bash
 git clone --recursive https://github.com/rupeelab17/pyQES.git
 cd pyQES
+```
 
-# Native deps (macOS Homebrew example)
+Native deps (Boost, NetCDF-C++, GDAL) — pick one:
+
+```bash
+# macOS (Homebrew)
 brew install boost netcdf-cxx gdal
 
+# Linux (Ubuntu / Debian)
+sudo apt install libboost-all-dev libnetcdf-dev libnetcdf-c++4-dev \
+  libnetcdf-cxx-legacy-dev libgdal-dev netcdf-bin cmake
+
+# Windows (vcpkg — recommended; needs Visual Studio / MSVC)
+git clone https://github.com/microsoft/vcpkg.git
+.\vcpkg\bootstrap-vcpkg.bat
+$env:VCPKG_ROOT = (Resolve-Path .\vcpkg).Path
+# CMAKE_ARGS is picked up by scikit-build-core / uv sync
+$env:CMAKE_ARGS = "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+```
+
+Alternatively on any OS, use the repo [`vcpkg.json`](vcpkg.json) manifest (same toolchain as the CI wheels).
+
+```bash
 # Editable install + extras ([uv](https://docs.astral.sh/uv/))
 uv sync --extra geo --extra io
 ```
