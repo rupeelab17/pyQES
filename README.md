@@ -110,6 +110,11 @@ brew install boost netcdf-cxx gdal
 sudo apt install libboost-all-dev libnetcdf-dev libnetcdf-c++4-dev \
   libnetcdf-cxx-legacy-dev libgdal-dev netcdf-bin cmake
 
+# Debian Trixie (e.g. python:3.13-slim-trixie): libnetcdf-cxx-legacy-dev
+# is not packaged — use only libnetcdf-dev and libnetcdf-c++4-dev:
+# sudo apt install libboost-all-dev libnetcdf-dev libnetcdf-c++4-dev \
+#   libgdal-dev netcdf-bin cmake
+
 # Windows (vcpkg — recommended; needs Visual Studio / MSVC)
 git clone https://github.com/microsoft/vcpkg.git
 .\vcpkg\bootstrap-vcpkg.bat

@@ -36,6 +36,7 @@ Build*/
 # IDE related files
 *.vscode
 *.idea
+.cursor/
 
 # MacOS files
 *.DS_Store
