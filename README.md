@@ -138,6 +138,26 @@ Wheels are built with [cibuildwheel](https://cibuildwheel.pypa.io/) (see [Contin
 
 ## Quick start
 
+### From a QES XML file
+
+```python
+from pyQES import pywinds
+
+result = pywinds.run(
+    xml="examples/umep_workflow/qes/umep_larochelle.xml",
+    dem="examples/umep_workflow/DEM_clip.tif",
+    buildings_src="examples/umep_workflow/buildings.shp",
+    buildings_mask="examples/umep_workflow/mask.shp",
+    solver="cpu",
+    work_dir="/tmp/qes_out",
+)
+print(result.winds_out)
+```
+
+Sensor paths referenced in the XML (e.g. `sensor_umep.xml`) are resolved relative to the XML directory. Set `auto_preprocess=False` to use the file as-is without DEM / buildings preprocessing.
+
+### From a Python config
+
 ```python
 from pyQES import pywinds
 from pyQES.util.config import WindsParameters, SensorParameters, TimeSeries
