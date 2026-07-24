@@ -2,6 +2,16 @@ name: wheels
 
 on:
   workflow_dispatch:
+    inputs:
+      os:
+        description: "Runner(s) to build"
+        type: choice
+        default: all
+        options:
+          - all
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
   workflow_call:
   pull_request:
     paths:
@@ -30,7 +40,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # workflow_dispatch can restrict to one OS; PR / workflow_call keep the full matrix.
+        os: ${{ github.event.inputs.os && github.event.inputs.os != 'all' && fromJSON(format('["{0}"]', github.event.inputs.os)) || fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') }}
 
     steps:
       - uses: actions/checkout@v4
@@ -90,6 +101,7 @@ jobs:
 
   build_sdist:
     name: Build sdist
+    if: ${{ github.event.inputs.os != 'windows-latest' && github.event.inputs.os != 'macos-latest' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
