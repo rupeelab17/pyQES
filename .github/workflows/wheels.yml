@@ -14,6 +14,7 @@ on:
       - "vcpkg-configuration.json"
       - "overlays/vcpkg/**"
       - ".github/workflows/wheels.yml"
+      - "ci/**"
 
 concurrency:
   group: wheels-${{ github.ref }}
@@ -69,13 +70,15 @@ jobs:
             CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_INSTALLED_DIR=$PWD/vcpkg_installed"
 
           CIBW_BEFORE_BUILD_WINDOWS: "python -m pip install delvewheel"
+          # Forward-slash CMAKE_ARGS: backslashes in -D values are CMake escapes
+          # (\a, \v, …) and can send vcpkg installs away from vcpkg_installed/.
           CIBW_ENVIRONMENT_WINDOWS: >
             VCPKG_DEFAULT_TRIPLET=x64-windows
+            VCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed
             PATH="$GITHUB_WORKSPACE/vcpkg_installed/x64-windows/bin;$PATH"
-            CMAKE_ARGS="-DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed"
+            CMAKE_ARGS="$(python -c 'import os; from pathlib import Path; ws=Path(os.environ["GITHUB_WORKSPACE"]).as_posix(); root=Path(os.environ["VCPKG_INSTALLATION_ROOT"]).as_posix(); print(f"-DCMAKE_TOOLCHAIN_FILE={root}/scripts/buildsystems/vcpkg.cmake -DVCPKG_INSTALLED_DIR={ws}/vcpkg_installed")')"
           CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
-            python -c "import os, subprocess, sys; bin_dir = os.path.join(os.environ['GITHUB_WORKSPACE'], 'vcpkg_installed', 'x64-windows', 'bin'); subprocess.check_call(['delvewheel', 'repair', '-w', sys.argv[1], '--add-path', bin_dir, '-v', sys.argv[2]])"
-            {dest_dir} {wheel}
+            python ci/repair_windows_wheel.py {dest_dir} {wheel}
 
           CIBW_TEST_COMMAND: >
             python -c "import pyQES._winds, pyQES._plume, pyQES._fire, pyQES._util; import pyQES; print(pyQES.__version__)"
