@@ -52,3 +52,6 @@ __pycache__/
 dist/
 wheelhouse/
 vcpkg_installed/
+
+# Example run outputs (do not commit NetCDF / temp XML)
+examples/umep_workflow/output/

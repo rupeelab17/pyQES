@@ -66,6 +66,14 @@ print(result.winds_out)
 ```
 
 See [`examples/run_winds_demo.py`](examples/run_winds_demo.py) for a CLI-style demo.
+Sample La Rochelle / UMEP inputs live under [`examples/umep_workflow/`](examples/umep_workflow/)
+(DEM, buildings, mask, QES XML).
+
+```bash
+uv run python examples/run_winds_demo.py
+uv run python examples/umep_workflow/run_qeswinds.py
+uv run python examples/umep_workflow/run_qeswinds_args.py --speed 5 --direction 180
+```
 
 | Submodule | Role |
 |-----------|------|
@@ -80,7 +88,7 @@ See [`examples/run_winds_demo.py`](examples/run_winds_demo.py) for a CLI-style d
 # Fast unit tests (no full solver run)
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest tests -m "not slow"
 
-# End-to-end winds run (compiled extension + sample data under qes-core/data)
+# End-to-end winds run (compiled extension + examples/umep_workflow data)
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest tests -m slow
 ```
 

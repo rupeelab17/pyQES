@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-# Sample GIS / XML assets ship with the qes-core submodule when available.
-UMEP_DIR = REPO_ROOT / "qes-core" / "data" / "umep_workflow"
+# La Rochelle / UMEP sample GIS + XML under examples/.
+UMEP_DIR = REPO_ROOT / "examples" / "umep_workflow"
 QES_DIR = UMEP_DIR / "qes"
 
 
