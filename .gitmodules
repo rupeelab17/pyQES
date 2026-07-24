@@ -1,0 +1,4 @@
+[submodule "qes-core"]
+	path = qes-core
+	url = https://github.com/rupeelab17/QES-Public.git
+	branch = develop_pyqes

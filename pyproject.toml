@@ -1,0 +1,119 @@
+[build-system]
+requires = ["scikit-build-core>=1.0", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "pyqes"
+version = "2.3.1"
+description = "Python wrapper for the Quick Environmental Simulation (QES) suite: QES-Winds, QES-Plume and QES-Fire."
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-only" }
+authors = [{ name = "QES / TIPEE" }]
+keywords = ["QES", "CFD", "wind", "dispersion", "fire", "urban", "microclimate"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: C++",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
+dependencies = [
+    "pydantic>=2",
+    "numpy",
+]
+
+[project.optional-dependencies]
+geo = ["rasterio", "pyproj", "geopandas"]
+io = ["netCDF4"]
+
+[project.urls]
+Homepage = "https://github.com/rupeelab17/pyQES"
+Documentation = "https://qes-documentation.readthedocs.io/en/latest"
+Source = "https://github.com/rupeelab17/pyQES"
+"QES Core" = "https://github.com/rupeelab17/QES-Public"
+
+# ----------------------------------------------------------
+# scikit-build-core: build the pybind11 extensions via CMake
+# ----------------------------------------------------------
+[tool.scikit-build]
+minimum-version = "1.0"
+cmake.version = ">=3.18"
+cmake.build-type = "Release"
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["pyQES"]
+sdist.inclusion-mode = "explicit"
+sdist.include = [
+    "native/**",
+    "pyQES/**",
+    "qes-core/CMakeLists.txt",
+    "qes-core/cmake/**",
+    "qes-core/src/util/**",
+    "qes-core/src/winds/**",
+    "qes-core/src/plume/**",
+    "qes-core/src/fire/**",
+    "qes-core/src/qes/**",
+    "qes-core/LICENSE",
+    "CMakeLists.txt",
+    "README.md",
+    "LICENSE",
+    "vcpkg.json",
+    "vcpkg-configuration.json",
+    "overlays/vcpkg/**",
+    "pyproject.toml",
+]
+sdist.exclude = [
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "**/*.so",
+    "**/*.dylib",
+    "**/*.dll",
+    "qes-core/.git/**",
+]
+
+[tool.scikit-build.cmake.define]
+ENABLE_TESTS = "OFF"
+QES_BUILD_APPS = "OFF"
+
+# ----------------------------------------------------------
+# uv / dev tooling
+# ----------------------------------------------------------
+[dependency-groups]
+dev = [
+    "pytest>=7",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "rasterio",
+    "pyproj",
+    "geopandas",
+    "netCDF4",
+]
+
+[tool.uv]
+reinstall-package = ["pyqes"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: end-to-end runs that require the compiled native extension",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["pyQES", "tests", "examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["pyQES"]
+mypy_path = "."
+ignore_missing_imports = true

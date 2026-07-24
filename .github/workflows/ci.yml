@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "pyQES/**"
+      - "tests/**"
+      - "native/**"
+      - "pyproject.toml"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "pyQES/**"
+      - "tests/**"
+      - "native/**"
+      - "pyproject.toml"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  lint-and-test:
+    name: Lint and unit tests (pure Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Create environment (test/lint deps only, no native build)
+        run: |
+          uv venv
+          uv pip install pytest pytest-cov ruff mypy \
+            pydantic numpy rasterio pyproj geopandas netCDF4
+
+      - name: Ruff
+        run: uv run --no-project ruff check pyQES tests examples
+
+      - name: Mypy
+        run: uv run --no-project mypy --ignore-missing-imports pyQES
+
+      - name: Pytest (excluding slow native runs)
+        env:
+          PYTHONPATH: .
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: uv run --no-project python -m pytest tests -m "not slow" -q
