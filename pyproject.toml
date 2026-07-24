@@ -44,7 +44,7 @@ Source = "https://github.com/rupeelab17/pyQES"
 # ----------------------------------------------------------
 [tool.scikit-build]
 minimum-version = "1.0"
-cmake.version = ">=3.18"
+cmake.version = ">=3.24"
 cmake.build-type = "Release"
 build-dir = "build/{wheel_tag}"
 wheel.packages = ["pyQES"]

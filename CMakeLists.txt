@@ -5,7 +5,7 @@
 # pybind11 extension modules under native/.
 # ====================================================================================
 
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.24)
 cmake_policy(SET CMP0074 NEW)
 
 project(pyQES VERSION 2.3.1 LANGUAGES CXX)
@@ -14,6 +14,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# find_package() in qes-core creates IMPORTED targets (GDAL::GDAL, netCDF::*,
+# …) that are directory-scoped by default. native/ is a sibling of qes-core, so
+# those targets must be promoted to global visibility.
+set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL ON)
 
 # Core as libraries only (no CLI / examples / CPack).
 set(QES_BUILD_APPS OFF CACHE BOOL "Build QES CLI apps" FORCE)
