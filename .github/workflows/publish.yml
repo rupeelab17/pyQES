@@ -3,9 +3,20 @@ name: publish
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      skip_wheels:
+        description: "Reuse CPU wheels/sdist from wheels_run_id; only rebuild CUDA"
+        type: boolean
+        default: false
+      wheels_run_id:
+        description: "Prior workflow run id that has wheels-* and sdist artifacts"
+        type: string
+        required: false
 
 jobs:
   call-wheels:
+    if: ${{ github.event_name == 'push' || inputs.skip_wheels == false }}
     uses: ./.github/workflows/wheels.yml
     permissions:
       contents: read
@@ -20,6 +31,11 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     needs: [call-wheels, call-cuda-build]
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.call-cuda-build.result == 'success' &&
+      (needs.call-wheels.result == 'success' || needs.call-wheels.result == 'skipped')
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -29,18 +45,48 @@ jobs:
       actions: read
       contents: read
     steps:
-      - name: Download all wheel artifacts
+      - name: Download wheels from this run
+        if: needs.call-wheels.result == 'success'
         uses: actions/download-artifact@v4
         with:
           path: dist
           pattern: "wheels-*"
           merge-multiple: true
 
-      - name: Download sdist
+      - name: Download sdist from this run
+        if: needs.call-wheels.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: sdist
           path: dist
+          merge-multiple: true
+
+      - name: Reuse CPU wheels from prior run
+        if: needs.call-wheels.result == 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.wheels_run_id }}
+          path: dist
+          pattern: "wheels-*"
+          merge-multiple: true
+
+      - name: Reuse sdist from prior run
+        if: needs.call-wheels.result == 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.wheels_run_id }}
+          name: sdist
+          path: dist
+          merge-multiple: true
+
+      - name: Download CUDA wheel from this run
+        if: needs.call-wheels.result == 'skipped'
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: "wheels-linux-cuda"
           merge-multiple: true
 
       - name: List packages to publish

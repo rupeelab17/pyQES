@@ -16,10 +16,12 @@ function(add_pyqes_module name)
 
   pybind11_add_module(${name} ${PYMOD_SOURCES})
   target_link_libraries(${name} PRIVATE ${PYMOD_LINK})
-  # qes-core CUDA flags/includes are directory-local; propagate to bindings.
+  # qes-core CUDA flags/includes are directory-local; CUDAToolkit_* vars
+  # from find_package in qes-core are not visible here. Link CUDA::cudart
+  # (global IMPORTED via CMAKE_FIND_PACKAGE_TARGETS_GLOBAL) for headers + libs.
   IF ($CACHE{HAS_CUDA_SUPPORT})
     target_compile_definitions(${name} PRIVATE HAS_CUDA)
-    target_include_directories(${name} PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_link_libraries(${name} PRIVATE CUDA::cudart)
   ENDIF()
   IF ($CACHE{HAS_OPTIX_SUPPORT})
     target_link_libraries(${name} PRIVATE qesOptix)
