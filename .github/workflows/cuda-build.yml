@@ -97,7 +97,9 @@ jobs:
         run: |
           uv venv --python 3.12 .venv-cuda
           uv pip install --python .venv-cuda dist/*.whl
-          .venv-cuda/bin/python -c "
+          # Run outside the repo so cwd ./pyQES does not shadow the installed wheel.
+          cd "${RUNNER_TEMP}"
+          "${GITHUB_WORKSPACE}/.venv-cuda/bin/python" -c "
           import pyQES._util
           assert pyQES._util.has_cuda, 'wheel built without CUDA'
           import pyQES._winds, pyQES._plume, pyQES._fire
