@@ -16,6 +16,10 @@ function(add_pyqes_module name)
 
   pybind11_add_module(${name} ${PYMOD_SOURCES})
   target_link_libraries(${name} PRIVATE ${PYMOD_LINK})
+  # qes-core ADD_DEFINITIONS(-DHAS_CUDA) is directory-local; propagate to bindings.
+  IF ($CACHE{HAS_CUDA_SUPPORT})
+    target_compile_definitions(${name} PRIVATE HAS_CUDA)
+  ENDIF()
   IF ($CACHE{HAS_OPTIX_SUPPORT})
     target_link_libraries(${name} PRIVATE qesOptix)
   ENDIF()
