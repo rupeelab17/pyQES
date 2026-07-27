@@ -234,14 +234,20 @@ uv run python examples/umep_workflow/run_qeswinds.py
 uv run python examples/umep_workflow/run_qeswinds_args.py --speed 5 --direction 180
 ```
 
-Fetch DEM / buildings / mask from a WGS84 bbox via [pymdurs](https://github.com/rupeelab17/pymdurs) (IGN, France + network), then run QES-Winds:
+### From a WGS84 bbox (pymdurs / IGN)
+
+Script: [`examples/pymdurs_workflow/run_from_bbox.py`](https://github.com/rupeelab17/pyQES/blob/main/examples/pymdurs_workflow/run_from_bbox.py).
+
+Downloads DEM, buildings and mask via [pymdurs](https://github.com/rupeelab17/pymdurs) (France + network), then runs QES-Winds. Default cell size is `2.5 2.5 1` (finer grids on large bboxes may segfault).
 
 ```bash
 uv sync --extra geo --extra io
 uv pip install pymdurs
-uv run python examples/pymdurs_workflow/run_from_bbox.py
+uv run python examples/pymdurs_workflow/run_from_bbox.py --to-tif
 uv run python examples/pymdurs_workflow/run_from_bbox.py \
   --bbox=-1.152704,46.181627,-1.139893,46.18699 --to-tif
+# reuse previous IGN downloads in examples/pymdurs_workflow/output/
+uv run python examples/pymdurs_workflow/run_from_bbox.py --skip-fetch --to-tif
 ```
 
 ---
