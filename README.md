@@ -5,7 +5,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://pypi.org/project/pyqes/)
 
-**Version:** `2.3.2` · **Python:** `≥ 3.10` · **License:** [GPL-3.0-only](LICENSE)
+**Version:** `2.4.0` · **Python:** `≥ 3.10` · **License:** [GPL-3.0-only](LICENSE)
 
 Python bindings for the [Quick Environmental Simulation (QES)](https://github.com/UtahEFD/QES-Public) C++ suite — **QES-Winds**, **QES-Plume**, and **QES-Fire**.
 
@@ -49,7 +49,7 @@ The C++ core lives in the [`qes-core`](https://github.com/rupeelab17/QES-Public)
 
 | | |
 |---|---|
-| **Package version** | `2.3.2` |
+| **Package version** | `2.4.0` |
 | **Python** | 3.10 · 3.11 · 3.12 · 3.13 |
 | **OS (CPU wheels)** | Linux `x86_64` (manylinux_2_28) · macOS `arm64` (deployment target 14.0+) · Windows `AMD64` |
 | **GPU wheel** | Linux CUDA (cp312), NVIDIA CC ≥ 7.0 |
@@ -92,7 +92,7 @@ Verify:
 
 ```python
 import pyQES
-print(pyQES.__version__)  # e.g. 2.3.2
+print(pyQES.__version__)  # e.g. 2.4.0
 ```
 
 ### From source
