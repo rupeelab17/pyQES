@@ -148,6 +148,33 @@ def _parse_args() -> argparse.Namespace:
         help="Minimum canopy height (m) for tree extraction (default: 2.0).",
     )
     p.add_argument(
+        "--max-tree-height",
+        type=float,
+        default=30.0,
+        help=(
+            "Drop CHM outliers taller than this (m) before QES "
+            "(default: 30; avoids domain/k_start crashes)."
+        ),
+    )
+    p.add_argument(
+        "--trees-min-spacing",
+        type=float,
+        default=50.0,
+        help=(
+            "Keep tallest trees with at least this spacing (m). Dense LiDAR "
+            "crowns blank near-ground wind under IsolatedTree; 0 disables "
+            "thinning (default: 50 ≈ ≤100 trees on the sample bbox)."
+        ),
+    )
+    p.add_argument(
+        "--tree-wake",
+        action="store_true",
+        help=(
+            "Enable isolated-tree wake (wakeFlag=1). Off by default: with "
+            "many crowns the wake model (11×H) blanks the wind field."
+        ),
+    )
+    p.add_argument(
         "--force",
         action="store_true",
         help=f"Allow domains larger than {MAX_DOMAIN_CELLS:,} cells (may segfault).",
@@ -328,16 +355,46 @@ def fetch_trees(
     )
 
 
+def _thin_trees_by_spacing(gdf: gpd.GeoDataFrame, min_spacing: float) -> gpd.GeoDataFrame:
+    """Keep tallest trees first; drop any within ``min_spacing`` of a kept tree."""
+    if min_spacing <= 0 or gdf.empty:
+        return gdf
+    ordered = gdf.sort_values("H", ascending=False)
+    kept_idx: list[object] = []
+    kept_pts: list[tuple[float, float]] = []
+    spacing2 = float(min_spacing) ** 2
+    for idx, row in ordered.iterrows():
+        geom = row.geometry
+        if geom is None or geom.is_empty:
+            continue
+        c = geom.centroid
+        x, y = float(c.x), float(c.y)
+        if any((x - kx) ** 2 + (y - ky) ** 2 < spacing2 for kx, ky in kept_pts):
+            continue
+        kept_idx.append(idx)
+        kept_pts.append((x, y))
+    out = gdf.loc[kept_idx].copy()
+    print(
+        f"Thinned trees: {len(gdf)} → {len(out)} "
+        f"(min spacing {min_spacing:g} m, prefer taller)."
+    )
+    return out
+
+
 def prepare_trees_shp(
     points_shp: Path,
     mask_shp: Path,
     out_shp: Path,
+    *,
+    max_tree_height: float | None = 30.0,
+    min_spacing: float = 50.0,
 ) -> Path | None:
     """Convert point tops to crown polygons, clip to mask, write ``trees.shp``.
 
     QES ``ESRIShapefile`` only keeps polygon geometries; point features are
     ignored. Crowns are circles of radius ``D/2``. Returns ``None`` if no trees
-    remain after clipping.
+    remain after clipping. ``max_tree_height`` drops CHM outliers; ``min_spacing``
+    thins dense crowns (IsolatedTree is not meant for a closed canopy).
     """
     gdf = gpd.read_file(points_shp)
     missing = [f for f in _TREE_REQUIRED_FIELDS if f not in gdf.columns]
@@ -347,6 +404,16 @@ def prepare_trees_shp(
             f"Got columns: {list(gdf.columns)}"
         )
 
+    n_in = len(gdf)
+    if max_tree_height is not None:
+        gdf = gdf[gdf["H"] <= float(max_tree_height)].copy()
+        n_drop = n_in - len(gdf)
+        if n_drop:
+            print(
+                f"Warning: dropped {n_drop} trees with H > {max_tree_height} m "
+                "(CHM outliers)."
+            )
+
     mask_gdf = gpd.read_file(mask_shp)
     if gdf.crs is None:
         gdf = gdf.set_crs(epsg=WORKING_CRS)
@@ -354,23 +421,30 @@ def prepare_trees_shp(
         gdf = gdf.to_crs(mask_gdf.crs)
 
     # Buffer Point → Polygon crown; leave existing polygons unchanged.
-    geom_types = set(gdf.geometry.geom_type.unique())
-    if "Point" in geom_types or "MultiPoint" in geom_types:
-        gdf = gdf.copy()
-        gdf["geometry"] = gdf.apply(
-            lambda row: (
-                row.geometry.buffer(float(row["D"]) / 2.0)
-                if row.geometry is not None
-                and row.geometry.geom_type in ("Point", "MultiPoint")
-                else row.geometry
-            ),
-            axis=1,
-        )
+    if not gdf.empty:
+        geom_types = set(gdf.geometry.geom_type.unique())
+        if "Point" in geom_types or "MultiPoint" in geom_types:
+            gdf = gdf.copy()
+            gdf["geometry"] = gdf.apply(
+                lambda row: (
+                    row.geometry.buffer(float(row["D"]) / 2.0)
+                    if row.geometry is not None
+                    and row.geometry.geom_type in ("Point", "MultiPoint")
+                    else row.geometry
+                ),
+                axis=1,
+            )
 
     mask_union = mask_gdf.geometry.union_all()
-    gdf = gdf[gdf.geometry.intersects(mask_union)].copy()
+    if not gdf.empty:
+        gdf = gdf[gdf.geometry.intersects(mask_union)].copy()
     if gdf.empty:
         print("Warning: no trees inside mask after clip; omitting vegetation.")
+        return None
+
+    gdf = _thin_trees_by_spacing(gdf, min_spacing)
+    if gdf.empty:
+        print("Warning: no trees left after thinning; omitting vegetation.")
         return None
 
     gdf = gdf[list(_TREE_REQUIRED_FIELDS) + ["geometry"]]
@@ -388,11 +462,14 @@ def resolve_inputs(
     lai: float,
     trees_resolution: float,
     min_tree_height: float,
+    max_tree_height: float,
+    trees_min_spacing: float,
 ) -> tuple[Path, Path, Path, Path | None]:
     """Return ``(dem_clip, mask, buildings, trees)``, fetching unless skipped."""
     mask_shp = work_dir / "mask.shp"
     buildings_shp = work_dir / "buildings.shp"
     trees_shp = work_dir / TREES_QES_NAME
+    trees_points = work_dir / TREES_POINTS_NAME
     dem_clip = work_dir / "DEM_clip.tif"
     dem_2154 = work_dir / f"DEM_{WORKING_CRS}.tif"
 
@@ -407,11 +484,20 @@ def resolve_inputs(
             )
         if no_trees:
             return dem_clip, mask_shp, buildings_shp, None
-        if not trees_shp.is_file():
+        src_trees = trees_points if trees_points.is_file() else trees_shp
+        if not src_trees.is_file():
             raise SystemExit(
-                f"--skip-fetch requires {trees_shp} (or pass --no-trees)."
+                f"--skip-fetch requires {trees_points} or {trees_shp} "
+                "(or pass --no-trees)."
             )
-        return dem_clip, mask_shp, buildings_shp, trees_shp
+        trees_out = prepare_trees_shp(
+            src_trees,
+            mask_shp,
+            trees_shp,
+            max_tree_height=max_tree_height,
+            min_spacing=trees_min_spacing,
+        )
+        return dem_clip, mask_shp, buildings_shp, trees_out
 
     print("Fetching DEM + mask from IGN (pymdurs)...")
     dem_tif, mask_shp = fetch_dem(work_dir, bbox)
@@ -440,7 +526,13 @@ def resolve_inputs(
         min_tree_height=min_tree_height,
     )
     print(f"trees (pts): {points_shp}")
-    trees_out = prepare_trees_shp(points_shp, mask_shp, trees_shp)
+    trees_out = prepare_trees_shp(
+        points_shp,
+        mask_shp,
+        trees_shp,
+        max_tree_height=max_tree_height,
+        min_spacing=trees_min_spacing,
+    )
     return dem_clip, mask_shp, buildings_shp, trees_out
 
 
@@ -449,10 +541,11 @@ def check_domain_size(
     dem: Path,
     buildings: Path,
     *,
+    trees: Path | None,
     force: bool,
 ) -> tuple[int, int, int]:
     """Print domain size and abort if the mesh is dangerously large."""
-    domain = geo.compute_domain_cells(params, dem, buildings)
+    domain = geo.compute_domain_cells(params, dem, buildings, trees_shp=trees)
     n_cells = domain[0] * domain[1] * domain[2]
     print(f"domain:       {domain[0]} x {domain[1]} x {domain[2]}  ({n_cells:,} cells)")
     if n_cells > MAX_DOMAIN_CELLS and not force:
@@ -484,12 +577,17 @@ def run_winds(
     params.buildings_params.shp_building_layer = "buildings_clipped"
 
     if trees_shp is not None:
+        # Dense LiDAR crowns: wakeFlag=1 applies an isolated-tree wake (~11×H)
+        # per crown and typically zeroes near-ground wind over the whole domain.
         params.vegetation_params = VegetationParameters(
+            wake_flag=1 if args.tree_wake else 0,
             shp_file=str(trees_shp.resolve()),
             shp_tree_layer=TREES_LAYER,
         )
 
-    check_domain_size(params, dem, buildings_src, force=args.force)
+    check_domain_size(
+        params, dem, buildings_src, trees=trees_shp, force=args.force
+    )
 
     sensor = SensorParameters(
         time_series=[
@@ -531,6 +629,8 @@ def main() -> None:
         lai=args.lai,
         trees_resolution=args.trees_resolution,
         min_tree_height=args.min_tree_height,
+        max_tree_height=args.max_tree_height,
+        trees_min_spacing=args.trees_min_spacing,
     )
     if args.skip_fetch:
         print(f"DEM clip:  {dem_tif}")

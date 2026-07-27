@@ -124,8 +124,8 @@ def compute_domain_origin_from_dem(dem: str | Path) -> Origin:
     )
 
 
-def _max_building_height(shp: str | Path, height_field: str) -> float:
-    """Return the maximum value of ``height_field`` in a buildings shapefile."""
+def _max_height_field(shp: str | Path, height_field: str) -> float:
+    """Return the maximum value of ``height_field`` in a shapefile."""
     shp = Path(shp)
     if not shp.is_file():
         return 0.0
@@ -136,17 +136,28 @@ def _max_building_height(shp: str | Path, height_field: str) -> float:
     return float(gdf[height_field].max())
 
 
+def _max_building_height(shp: str | Path, height_field: str) -> float:
+    """Return the maximum value of ``height_field`` in a buildings shapefile."""
+    return _max_height_field(shp, height_field)
+
+
 def compute_domain_cells(
     params: WindsParameters,
     dem: str | Path,
     shp: str | Path | None = None,
     z_margin: float = 20.0,
+    *,
+    trees_shp: str | Path | None = None,
+    wake_factor: float = 1.5,
 ) -> tuple[int, int, int]:
     """Compute the (nx, ny, nz) cell counts for a QES domain.
 
     Mirrors ``compute_domain_cells`` in ``run_qeswinds.sh``:
     ``nx = ceil((width_m + 2*halo_x) / dx)`` (idem ny), and nz derives from the
-    max terrain elevation plus the max building height plus a vertical margin.
+    relative DEM range plus max(building, tree) height plus a vertical margin.
+
+    When ``trees_shp`` is set, nz also reserves headroom for the isolated-tree
+    wake check ``ceil(1.5 * k_end) < nz`` in ``CanopyIsolatedTree``.
     """
     sim = params.simulation_parameters
     halo_x, halo_y = sim.halo_x, sim.halo_y
@@ -159,15 +170,22 @@ def compute_domain_cells(
     rasterio = _require("rasterio")
     with rasterio.open(str(dem)) as ds:
         band = ds.read(1, masked=True)
-        dem_max = float(band.max())
+        dem_rel = float(band.max()) - float(band.min())
 
     max_h = 0.0
     if shp is not None:
         field = params.buildings_params.shp_height_field or "hauteur"
-        max_h = _max_building_height(shp, field)
+        max_h = max(max_h, _max_building_height(shp, field))
+    if trees_shp is not None:
+        max_h = max(max_h, _max_height_field(trees_shp, "H"))
 
-    top_z = dem_max + max_h + z_margin
-    nz = max(1, math.ceil(top_z / dz))
+    content_z = dem_rel + max_h
+    if trees_shp is not None:
+        # Isolated-tree wake: require nz > wake_factor * k_end ≈ wake_factor * content_z / dz
+        # (see CanopyIsolatedTree::setCellFlags).
+        nz = max(1, math.ceil(wake_factor * content_z / dz) + 1)
+    else:
+        nz = max(1, math.ceil((content_z + z_margin) / dz))
     return nx, ny, nz
 
 

@@ -196,7 +196,18 @@ def _preprocess(
     sim.utm_zone = origin.utm_zone
     sim.utm_zone_letter = origin.utm_zone_letter
 
-    sim.domain = geo.compute_domain_cells(params, dem, params.buildings_params.shp_file, z_margin)
+    trees_shp = (
+        params.vegetation_params.shp_file
+        if params.vegetation_params is not None
+        else None
+    )
+    sim.domain = geo.compute_domain_cells(
+        params,
+        dem,
+        params.buildings_params.shp_file,
+        z_margin,
+        trees_shp=trees_shp,
+    )
 
     site_x, site_y = geo.compute_sensor_north_qes_coords(
         dem, sim.dem_distance_x, sim.dem_distance_y
