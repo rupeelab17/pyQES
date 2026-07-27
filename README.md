@@ -192,6 +192,7 @@ params.simulation_parameters.cell_size = (2.0, 2.0, 0.5)
 params.simulation_parameters.halo_x = 40.0
 params.simulation_parameters.halo_y = 40.0
 params.simulation_parameters.domain_rotation = 0.0  # must be 0
+params.buildings_params.shp_file = "path/to/buildings.shp"
 
 sensor = SensorParameters(
     time_series=[TimeSeries(speed=3.0, direction=270.0, height=10.0, site_z0=0.24)]
