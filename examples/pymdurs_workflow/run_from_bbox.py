@@ -14,8 +14,10 @@ Usage (from the repo root)::
     # reuse previous IGN downloads:
     uv run python examples/pymdurs_workflow/run_from_bbox.py --skip-fetch --to-tif
 
-Note: ``--cell-size 2 2 0.5`` on this default bbox yields ~15M cells and can
-segfault in the native QES solver. Prefer ``2.5 2.5 1`` (default) or coarser.
+Note: fine horizontal grids (e.g. ``--cell-size 2 2 0.5``) on this default
+bbox can segfault in the native QES solver (~8M+ cells). Prefer the default
+``2.5 2.5 1`` or coarser. Do not resample the DEM to cell size — QES crashes
+on some warped GeoTIFFs; keep the native IGN clip resolution.
 """
 
 from __future__ import annotations
@@ -209,35 +211,6 @@ def clip_dem_to_mask(dem_path: Path, mask_shp: Path, out_path: Path) -> Path:
     return out_path
 
 
-def resample_dem(dem_path: Path, dx: float, dy: float, out_path: Path) -> Path:
-    """Resample DEM so pixel size matches QES ``cell_size`` (dx, dy)."""
-    import rasterio
-    from rasterio.warp import Resampling, calculate_default_transform, reproject
-
-    with rasterio.open(dem_path) as src:
-        transform, width, height = calculate_default_transform(
-            src.crs,
-            src.crs,
-            src.width,
-            src.height,
-            *src.bounds,
-            resolution=(dx, dy),
-        )
-        profile = src.profile.copy()
-        profile.update(transform=transform, width=width, height=height)
-        with rasterio.open(out_path, "w", **profile) as dst:
-            reproject(
-                source=rasterio.band(src, 1),
-                destination=rasterio.band(dst, 1),
-                src_transform=src.transform,
-                src_crs=src.crs,
-                dst_transform=transform,
-                dst_crs=src.crs,
-                resampling=Resampling.bilinear,
-            )
-    return out_path
-
-
 def fetch_buildings(
     work_dir: Path, bbox: tuple[float, float, float, float]
 ) -> Path:
@@ -302,18 +275,6 @@ def resolve_inputs(
     buildings_shp = fetch_buildings(work_dir, bbox)
     print(f"buildings: {buildings_shp}")
     return dem_clip, mask_shp, buildings_shp
-
-
-def prepare_dem_for_qes(
-    dem_clip: Path,
-    work_dir: Path,
-    cell_size: tuple[float, float, float],
-) -> Path:
-    """Resample clipped DEM to dx/dy and return the path used by QES."""
-    dx, dy, _dz = cell_size
-    out = work_dir / f"DEM_{dx:g}x{dy:g}m.tif"
-    resample_dem(dem_clip, dx, dy, out)
-    return out
 
 
 def check_domain_size(
@@ -387,16 +348,13 @@ def main() -> None:
     print(f"work_dir:     {work_dir}")
     print(f"cell_size:    {tuple(args.cell_size)}")
 
-    dem_clip, mask_shp, buildings_shp = resolve_inputs(
+    dem_tif, mask_shp, buildings_shp = resolve_inputs(
         work_dir, args.bbox, skip_fetch=args.skip_fetch
     )
     if args.skip_fetch:
-        print(f"DEM clip:  {dem_clip}")
+        print(f"DEM clip:  {dem_tif}")
         print(f"mask:      {mask_shp}")
         print(f"buildings: {buildings_shp}")
-
-    dem_tif = prepare_dem_for_qes(dem_clip, work_dir, tuple(args.cell_size))
-    print(f"DEM QES:   {dem_tif}")
 
     print("Running QES-Winds...")
     result = run_winds(
@@ -411,7 +369,7 @@ def main() -> None:
         print("winds_wk:", result.winds_wk)
 
     if args.to_tif:
-        tif = pywinds.to_tif(z=args.tif_z, verbose=True)
+        tif = pywinds.to_tif(z=args.tif_z, verbose=True, mask_buildings=False)
         print("tif:", tif)
 
 
