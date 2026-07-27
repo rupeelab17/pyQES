@@ -330,6 +330,7 @@ def to_tif(
     time_idx: int = 0,
     mask_buildings: bool = True,
     output_path: str | Path | None = None,
+    verbose: bool = False,
 ) -> str:
     """Export velocity magnitude at ``z`` m AGL from the last :func:`run`.
 
@@ -349,6 +350,18 @@ def to_tif(
         raise RuntimeError("No winds_out NetCDF in the last run; call run(winds_out=True).")
     if not Path(winds_out).is_file():
         raise FileNotFoundError(f"winds_out NetCDF not found: {winds_out}")
+
+    import netCDF4
+
+    with netCDF4.Dataset(winds_out) as ds:
+        nt = ds.dimensions["t"].size if "t" in ds.dimensions else 0
+        has_mag = "mag" in ds.variables
+    if nt == 0 or not has_mag:
+        raise RuntimeError(
+            f"winds_out NetCDF is incomplete (t={nt}, mag={'yes' if has_mag else 'no'}): "
+            f"{winds_out}. The QES run likely did not finish (OOM / interrupt). "
+            "Re-run with a coarser --cell-size (e.g. 2 2 0.5) or a smaller bbox."
+        )
 
     sim = _last_run.params.simulation_parameters
     if sim.dem is None:
@@ -374,4 +387,5 @@ def to_tif(
         agl_height=z,
         time_idx=time_idx,
         mask_buildings=mask_buildings,
+        verbose=verbose,
     )

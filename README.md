@@ -5,7 +5,7 @@
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://pypi.org/project/pyqes/)
 
-**Version:** `2.3.1` · **Python:** `≥ 3.10` · **License:** [GPL-3.0-only](LICENSE)
+**Version:** `2.3.2` · **Python:** `≥ 3.10` · **License:** [GPL-3.0-only](LICENSE)
 
 Python bindings for the [Quick Environmental Simulation (QES)](https://github.com/UtahEFD/QES-Public) C++ suite — **QES-Winds**, **QES-Plume**, and **QES-Fire**.
 
@@ -47,7 +47,7 @@ The C++ core lives in the [`qes-core`](https://github.com/rupeelab17/QES-Public)
 
 | | |
 |---|---|
-| **Package version** | `2.3.1` |
+| **Package version** | `2.3.2` |
 | **Python** | 3.10 · 3.11 · 3.12 · 3.13 |
 | **OS (CPU wheels)** | Linux `x86_64` (manylinux_2_28) · macOS `arm64` (deployment target 14.0+) · Windows `AMD64` |
 | **GPU wheel** | Linux CUDA (cp312), NVIDIA CC ≥ 7.0 |
@@ -90,7 +90,7 @@ Verify:
 
 ```python
 import pyQES
-print(pyQES.__version__)  # e.g. 2.3.1
+print(pyQES.__version__)  # e.g. 2.3.2
 ```
 
 ### From source
@@ -232,6 +232,16 @@ uv run python examples/run_winds_demo.py
 uv run python examples/run_winds_demo.py --speed 5 --direction 180
 uv run python examples/umep_workflow/run_qeswinds.py
 uv run python examples/umep_workflow/run_qeswinds_args.py --speed 5 --direction 180
+```
+
+Fetch DEM / buildings / mask from a WGS84 bbox via [pymdurs](https://github.com/rupeelab17/pymdurs) (IGN, France + network), then run QES-Winds:
+
+```bash
+uv sync --extra geo --extra io
+uv pip install pymdurs
+uv run python examples/pymdurs_workflow/run_from_bbox.py
+uv run python examples/pymdurs_workflow/run_from_bbox.py \
+  --bbox=-1.152704,46.181627,-1.139893,46.18699 --to-tif
 ```
 
 ---
