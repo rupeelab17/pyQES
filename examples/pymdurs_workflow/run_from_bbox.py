@@ -10,7 +10,7 @@ Usage (from the repo root)::
 
     uv run python examples/pymdurs_workflow/run_from_bbox.py --to-tif
     uv run python examples/pymdurs_workflow/run_from_bbox.py \\
-        --bbox=-1.152704,46.181627,-1.139893,46.18699 --to-tif
+        --bbox=-1.152704,46.181627,-1.139893,46.18699 --to-tif --to-streamlines --to-flowlines
     # reuse previous IGN downloads:
     uv run python examples/pymdurs_workflow/run_from_bbox.py --skip-fetch --to-tif
 
@@ -117,7 +117,28 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Export |V| GeoTIFF at --tif-z m AGL after the run (needs pyqes[geo,io])",
     )
-    p.add_argument("--tif-z", type=float, default=1.5, help="AGL height for --to-tif")
+    p.add_argument(
+        "--to-streamlines",
+        action="store_true",
+        help=(
+            "Export u/v arrow GeoJSON at --tif-z m AGL after the run "
+            "(needs pyqes[geo,io]; MapLibre icon-rotate bearing)"
+        ),
+    )
+    p.add_argument(
+        "--to-flowlines",
+        action="store_true",
+        help=(
+            "Export RK4 streamline GeoJSON (LineStrings) at --tif-z m AGL "
+            "(needs pyqes[geo,io]; MapLibre symbol-placement:line)"
+        ),
+    )
+    p.add_argument(
+        "--tif-z",
+        type=float,
+        default=1.5,
+        help="AGL height for --to-tif / --to-streamlines / --to-flowlines",
+    )
     return p.parse_args()
 
 
@@ -372,6 +393,14 @@ def main() -> None:
     if args.to_tif:
         tif = pywinds.to_tif(z=args.tif_z, verbose=True, mask_buildings=False)
         print("tif:", tif)
+
+    if args.to_streamlines:
+        gj = pywinds.to_streamlines(z=args.tif_z, verbose=True, mask_buildings=False)
+        print("streamlines:", gj)
+
+    if args.to_flowlines:
+        fl = pywinds.to_flowlines(z=args.tif_z, verbose=True, mask_buildings=False)
+        print("flowlines:", fl)
 
 
 if __name__ == "__main__":

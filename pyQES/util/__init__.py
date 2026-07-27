@@ -47,12 +47,23 @@ __all__ = [
     "geo",
     "mag_to_tif",
     "default_mag_tif_name",
+    "uv_to_arrows_geojson",
+    "default_arrows_geojson_name",
+    "uv_to_flowlines_geojson",
+    "default_flowlines_geojson_name",
 ]
 
 
 def __getattr__(name: str) -> Any:
     """Lazy-load NetCDF/rasterio exporters so light imports stay optional-free."""
-    if name in ("mag_to_tif", "default_mag_tif_name"):
+    if name in (
+        "mag_to_tif",
+        "default_mag_tif_name",
+        "uv_to_arrows_geojson",
+        "default_arrows_geojson_name",
+        "uv_to_flowlines_geojson",
+        "default_flowlines_geojson_name",
+    ):
         from . import outputs
 
         return getattr(outputs, name)

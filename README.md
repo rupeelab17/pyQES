@@ -36,6 +36,8 @@ The C++ core lives in the [`qes-core`](https://github.com/rupeelab17/QES-Public)
 
 - Run **QES-Winds** from Python (`config` / XML / JSON), with optional DEM / buildings preprocessing
 - Export wind magnitude to georeferenced GeoTIFF (`pywinds.to_tif`)
+- Export u/v arrow seeds as GeoJSON for MapLibre (`pywinds.to_streamlines`)
+- Export RK4 streamlines as GeoJSON LineStrings for MapLibre (`pywinds.to_flowlines`)
 - Run **QES-Plume** on winds + turbulence NetCDF fields
 - Run coupled **QES-Fire** (optional smoke plume)
 - Pydantic v2 config models, XML/JSON I/O, geospatial helpers
@@ -58,8 +60,8 @@ The C++ core lives in the [`qes-core`](https://github.com/rupeelab17/QES-Public)
 | Extra | Packages | Role |
 |-------|----------|------|
 | *(core)* | `pydantic≥2`, `numpy` | Config models & arrays |
-| `geo` | `rasterio`, `pyproj`, `geopandas` | DEM / buildings preprocessing, GeoTIFF export |
-| `io` | `netCDF4` | NetCDF helpers |
+| `geo` | `rasterio`, `pyproj`, `geopandas` | DEM / buildings preprocessing, GeoTIFF & GeoJSON export |
+| `io` | `netCDF4` | NetCDF helpers (incl. `windsOut.nc` → GeoTIFF / GeoJSON) |
 
 ### Native libraries (from-source builds)
 
@@ -75,9 +77,9 @@ Boost (program-options, date-time, property-tree, optional), NetCDF-C++, GDAL �
 pip install pyqes
 
 # optional extras
-pip install "pyqes[geo]"      # geospatial preprocessing / GeoTIFF
+pip install "pyqes[geo]"      # geospatial preprocessing / GeoTIFF / GeoJSON
 pip install "pyqes[io]"       # NetCDF helpers
-pip install "pyqes[geo,io]"   # both
+pip install "pyqes[geo,io]"   # both (needed for to_tif / to_streamlines / to_flowlines)
 ```
 
 ```bash
@@ -203,6 +205,14 @@ print(result.winds_out)
 # optional GeoTIFF of |V| at 1.5 m AGL (needs pyqes[geo,io])
 tif = pywinds.to_tif(z=1.5)
 print(tif)
+
+# optional GeoJSON arrows (bearing + speed) for MapLibre icon-rotate
+arrows = pywinds.to_streamlines(z=1.5, stride=4)
+print(arrows)
+
+# optional RK4 streamlines (LineStrings) for MapLibre symbol-placement:line
+flowlines = pywinds.to_flowlines(z=1.5, seed_stride=8)
+print(flowlines)
 ```
 
 `pywinds.run` accepts exactly one of `config`, `xml`, or `json` (or none, with keyword overrides). Solvers: `"cpu"` / `"gpu"` (or the QES integer code).
@@ -213,10 +223,10 @@ print(tif)
 
 | Module | Role |
 |--------|------|
-| `pyQES.pywinds` | QES-Winds — `run(...)`, `to_tif(...)` |
+| `pyQES.pywinds` | QES-Winds — `run(...)`, `to_tif(...)`, `to_streamlines(...)`, `to_flowlines(...)` |
 | `pyQES.pyplume` | QES-Plume — `run(xml=..., winds_file=..., turb_file=...)` |
 | `pyQES.pyfire` | Coupled QES-Fire — `run(...)` (+ optional `plume_xml`) |
-| `pyQES.util` | Pydantic config, XML/JSON I/O, paths, geo helpers, NetCDF→GeoTIFF |
+| `pyQES.util` | Pydantic config, XML/JSON I/O, paths, geo helpers, NetCDF→GeoTIFF / GeoJSON |
 | `pyQES._winds` / `_plume` / `_fire` / `_util` | Compiled pybind11 extensions |
 
 Config models live in `pyQES.util.config`: `WindsParameters`, `SimulationParameters`, `SensorParameters`, `TimeSeries`, etc.
@@ -238,16 +248,16 @@ uv run python examples/umep_workflow/run_qeswinds_args.py --speed 5 --direction 
 
 Script: [`examples/pymdurs_workflow/run_from_bbox.py`](https://github.com/rupeelab17/pyQES/blob/main/examples/pymdurs_workflow/run_from_bbox.py).
 
-Downloads DEM, buildings and mask via [pymdurs](https://github.com/rupeelab17/pymdurs) (France + network), then runs QES-Winds. Default cell size is `2.5 2.5 1` (finer grids on large bboxes may segfault).
+Downloads DEM, buildings and mask via [pymdurs](https://github.com/rupeelab17/pymdurs) (France + network), then runs QES-Winds. Default cell size is `2.5 2.5 1` (finer grids on large bboxes may segfault). Optional flags: `--to-tif` (|V| GeoTIFF), `--to-streamlines` (arrow Points), `--to-flowlines` (RK4 LineStrings).
 
 ```bash
 uv sync --extra geo --extra io
 uv pip install pymdurs
 uv run python examples/pymdurs_workflow/run_from_bbox.py --to-tif
 uv run python examples/pymdurs_workflow/run_from_bbox.py \
-  --bbox=-1.152704,46.181627,-1.139893,46.18699 --to-tif
+  --bbox=-1.152704,46.181627,-1.139893,46.18699 --to-tif --to-streamlines --to-flowlines
 # reuse previous IGN downloads in examples/pymdurs_workflow/output/
-uv run python examples/pymdurs_workflow/run_from_bbox.py --skip-fetch --to-tif
+uv run python examples/pymdurs_workflow/run_from_bbox.py --skip-fetch --to-tif --to-flowlines
 ```
 
 ---

@@ -8,7 +8,9 @@ native QES-Winds solver.
 
 After :func:`run`, :func:`to_tif` exports wind magnitude from the last run's
 ``windsOut.nc`` to a georeferenced GeoTIFF using the in-memory simulation
-parameters (not re-parsed from XML).
+parameters (not re-parsed from XML). :func:`to_streamlines` exports a subsampled
+u/v arrow seed as GeoJSON points (bearing + speed). :func:`to_flowlines` exports
+RK4 streamlines as GeoJSON LineStrings for MapLibre ``symbol-placement: line``.
 """
 
 from __future__ import annotations
@@ -23,7 +25,14 @@ from ..util.config import SensorParameters, WindsParameters
 from ..util.paths import resolve_work_dir
 from ..util.xml_io import from_qes_xml, from_sensor_xml, write_qes_xml, write_sensor_xml
 
-__all__ = ["WindsParameters", "SensorParameters", "run", "to_tif"]
+__all__ = [
+    "WindsParameters",
+    "SensorParameters",
+    "run",
+    "to_tif",
+    "to_streamlines",
+    "to_flowlines",
+]
 
 
 @dataclass
@@ -387,5 +396,155 @@ def to_tif(
         agl_height=z,
         time_idx=time_idx,
         mask_buildings=mask_buildings,
+        verbose=verbose,
+    )
+
+
+def to_streamlines(
+    z: float = 1.5,
+    *,
+    time_idx: int = 0,
+    mask_buildings: bool = True,
+    output_path: str | Path | None = None,
+    stride: int = 4,
+    min_speed: float = 0.05,
+    verbose: bool = False,
+) -> str:
+    """Export a MapLibre-ready arrow GeoJSON from the last :func:`run` u/v field.
+
+    Samples ``u``/``v`` at ``z`` m AGL, subsamples every ``stride`` cells, and
+    writes EPSG:4326 points with ``bearing`` (flow *toward*, degrees clockwise
+    from north — MapLibre ``icon-rotate``) and ``speed`` (m/s).
+
+    :returns: Absolute path of the written GeoJSON
+        (``{out_basename}_arrows_z{z}m_dir{dir}.geojson`` by default).
+    """
+    if _last_run is None:
+        raise RuntimeError("No pywinds.run() context; call run() before to_streamlines().")
+
+    winds_out = _last_run.winds_out
+    if not winds_out:
+        raise RuntimeError("No winds_out NetCDF in the last run; call run(winds_out=True).")
+    if not Path(winds_out).is_file():
+        raise FileNotFoundError(f"winds_out NetCDF not found: {winds_out}")
+
+    import netCDF4
+
+    with netCDF4.Dataset(winds_out) as ds:
+        nt = ds.dimensions["t"].size if "t" in ds.dimensions else 0
+        has_uv = "u" in ds.variables and "v" in ds.variables
+    if nt == 0 or not has_uv:
+        raise RuntimeError(
+            f"winds_out NetCDF incomplete for arrows (t={nt}, u/v={'yes' if has_uv else 'no'}): "
+            f"{winds_out}. Re-run with outputFields including u and v (or 'all')."
+        )
+
+    sim = _last_run.params.simulation_parameters
+    if sim.dem is None:
+        raise ValueError("No DEM in the last run parameters; cannot georeference arrows.")
+
+    from ..util.outputs import default_arrows_geojson_name, uv_to_arrows_geojson
+
+    dx, dy = sim.cell_size[0], sim.cell_size[1]
+    direction = _direction_from_sensors(_last_run.sensors, time_idx)
+
+    if output_path is None:
+        out_dir = Path(winds_out).resolve().parent
+        output_path = out_dir / default_arrows_geojson_name(_last_run.out_basename, z, direction)
+
+    return uv_to_arrows_geojson(
+        winds_out,
+        dx=dx,
+        dy=dy,
+        halo_x=sim.halo_x,
+        halo_y=sim.halo_y,
+        dem=sim.dem,
+        output_path=output_path,
+        agl_height=z,
+        time_idx=time_idx,
+        mask_buildings=mask_buildings,
+        stride=stride,
+        min_speed=min_speed,
+        verbose=verbose,
+    )
+
+
+def to_flowlines(
+    z: float = 1.5,
+    *,
+    time_idx: int = 0,
+    mask_buildings: bool = True,
+    output_path: str | Path | None = None,
+    seed_stride: int = 8,
+    min_speed: float = 0.05,
+    max_steps: int = 2000,
+    max_length_m: float | None = None,
+    step_cell: float = 0.5,
+    bidirectional: bool = True,
+    min_points: int = 4,
+    verbose: bool = False,
+) -> str:
+    """Export RK4 streamlines as GeoJSON LineStrings from the last :func:`run`.
+
+    Integrates AGL ``u``/``v`` from a seed grid. Intended for MapLibre: a line
+    layer plus a symbol layer with ``symbol-placement: 'line'`` (chevrons follow
+    the path; no bearing property required).
+
+    :returns: Absolute path of the written GeoJSON
+        (``{out_basename}_flowlines_z{z}m_dir{dir}.geojson`` by default).
+    """
+    if _last_run is None:
+        raise RuntimeError("No pywinds.run() context; call run() before to_flowlines().")
+
+    winds_out = _last_run.winds_out
+    if not winds_out:
+        raise RuntimeError("No winds_out NetCDF in the last run; call run(winds_out=True).")
+    if not Path(winds_out).is_file():
+        raise FileNotFoundError(f"winds_out NetCDF not found: {winds_out}")
+
+    import netCDF4
+
+    with netCDF4.Dataset(winds_out) as ds:
+        nt = ds.dimensions["t"].size if "t" in ds.dimensions else 0
+        has_uv = "u" in ds.variables and "v" in ds.variables
+    if nt == 0 or not has_uv:
+        raise RuntimeError(
+            f"winds_out NetCDF incomplete for flowlines (t={nt}, u/v={'yes' if has_uv else 'no'}): "
+            f"{winds_out}. Re-run with outputFields including u and v (or 'all')."
+        )
+
+    sim = _last_run.params.simulation_parameters
+    if sim.dem is None:
+        raise ValueError("No DEM in the last run parameters; cannot georeference flowlines.")
+
+    from ..util.outputs import default_flowlines_geojson_name, uv_to_flowlines_geojson
+
+    dx, dy = sim.cell_size[0], sim.cell_size[1]
+    direction = _direction_from_sensors(_last_run.sensors, time_idx)
+
+    if output_path is None:
+        out_dir = Path(winds_out).resolve().parent
+        output_path = out_dir / default_flowlines_geojson_name(
+            _last_run.out_basename, z, direction
+        )
+
+    return uv_to_flowlines_geojson(
+        winds_out,
+        dx=dx,
+        dy=dy,
+        halo_x=sim.halo_x,
+        halo_y=sim.halo_y,
+        dem=sim.dem,
+        output_path=output_path,
+        agl_height=z,
+        time_idx=time_idx,
+        mask_buildings=mask_buildings,
+        seed_stride=seed_stride,
+        min_speed=min_speed,
+        max_steps=max_steps,
+        max_length_m=max_length_m,
+        step_cell=step_cell,
+        bidirectional=bidirectional,
+        min_points=min_points,
         verbose=verbose,
     )
