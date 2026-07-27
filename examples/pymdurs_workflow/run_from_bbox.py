@@ -313,6 +313,7 @@ def run_winds(
     params.simulation_parameters.halo_y = args.halo_y
     params.simulation_parameters.domain_rotation = 0.0
     params.buildings_params.shp_height_field = "hauteur"
+    params.buildings_params.shp_building_layer = "buildings_clipped"
 
     check_domain_size(params, dem, buildings_src, force=args.force)
 
