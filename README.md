@@ -34,7 +34,7 @@ The C++ core lives in the [`qes-core`](https://github.com/rupeelab17/QES-Public)
 
 ## Features
 
-- Run **QES-Winds** from Python (`config` / XML / JSON), with optional DEM / buildings preprocessing
+- Run **QES-Winds** from Python (`config` / XML / JSON), with optional DEM / buildings preprocessing and vegetation (Homogeneous / IsolatedTree / tree shapefile)
 - Export wind magnitude to georeferenced GeoTIFF (`pywinds.to_tif`)
 - Export u/v arrow seeds as GeoJSON for MapLibre (`pywinds.to_streamlines`)
 - Export RK4 streamlines as GeoJSON LineStrings for MapLibre (`pywinds.to_flowlines`)
@@ -186,7 +186,14 @@ Sensor paths referenced in the XML (e.g. `sensor_umep.xml`) are resolved relativ
 
 ```python
 from pyQES import pywinds
-from pyQES.util.config import WindsParameters, SensorParameters, TimeSeries
+from pyQES.util.config import (
+    WindsParameters,
+    SensorParameters,
+    TimeSeries,
+    Homogeneous,
+    IsolatedTree,
+    VegetationParameters,
+)
 
 params = WindsParameters()
 params.simulation_parameters.dem = "path/to/DEM.tif"
@@ -195,6 +202,40 @@ params.simulation_parameters.halo_x = 40.0
 params.simulation_parameters.halo_y = 40.0
 params.simulation_parameters.domain_rotation = 0.0  # must be 0
 params.buildings_params.shp_file = "path/to/buildings.shp"
+
+# Optional vegetation — Homogeneous block (Cionco; rectangle or xVertex/yVertex)
+params.vegetation_params = VegetationParameters(
+    homogeneous=[
+        Homogeneous(
+            attenuation_coefficient=1.0,
+            height=10.0,
+            base_height=0.0,
+            x_start=80.0,
+            y_start=60.0,
+            length=40.0,
+            width=80.0,
+            canopy_rotation=0.0,
+        )
+    ]
+)
+# Or IsolatedTree blocks (QES domain coords, metres):
+# params.vegetation_params = VegetationParameters(
+#     isolated_trees=[
+#         IsolatedTree(
+#             attenuation_coefficient=3.0,
+#             height=15.0,
+#             base_height=0.0,
+#             z_max_lai=0.7,
+#             x_center=20.0,
+#             y_center=100.0,
+#             width=10.0,
+#         )
+#     ]
+# )
+# Or trees from a point shapefile (fields H, D, LAI):
+# params.vegetation_params = VegetationParameters(
+#     shp_file="path/to/trees.shp", shp_tree_layer="trees"
+# )
 
 sensor = SensorParameters(
     time_series=[TimeSeries(speed=3.0, direction=270.0, height=10.0, site_z0=0.24)]
@@ -229,7 +270,7 @@ print(flowlines)
 | `pyQES.util` | Pydantic config, XML/JSON I/O, paths, geo helpers, NetCDF→GeoTIFF / GeoJSON |
 | `pyQES._winds` / `_plume` / `_fire` / `_util` | Compiled pybind11 extensions |
 
-Config models live in `pyQES.util.config`: `WindsParameters`, `SimulationParameters`, `SensorParameters`, `TimeSeries`, etc.
+Config models live in `pyQES.util.config`: `WindsParameters`, `SimulationParameters`, `SensorParameters`, `TimeSeries`, `VegetationParameters`, `Homogeneous`, `IsolatedTree`, etc.
 
 ---
 
@@ -240,15 +281,19 @@ Sample La Rochelle / UMEP inputs: [`examples/umep_workflow/`](examples/umep_work
 ```bash
 uv run python examples/run_winds_demo.py
 uv run python examples/run_winds_demo.py --speed 5 --direction 180
+uv run python examples/run_vegetation_demo.py
+uv run python examples/run_vegetation_demo.py --canopy isolated
 uv run python examples/umep_workflow/run_qeswinds.py
 uv run python examples/umep_workflow/run_qeswinds_args.py --speed 5 --direction 180
 ```
+
+Vegetation demo ([`examples/run_vegetation_demo.py`](examples/run_vegetation_demo.py)): flat domain with one `Homogeneous` rectangle (default), `--canopy isolated` for `IsolatedTree`, or `--trees-shp` for a point shapefile (`H`, `D`, `LAI`).
 
 ### From a WGS84 bbox (pymdurs / IGN)
 
 Script: [`examples/pymdurs_workflow/run_from_bbox.py`](https://github.com/rupeelab17/pyQES/blob/main/examples/pymdurs_workflow/run_from_bbox.py).
 
-Downloads DEM, buildings and mask via [pymdurs](https://github.com/rupeelab17/pymdurs) (France + network), then runs QES-Winds. Default cell size is `2.5 2.5 1` (finer grids on large bboxes may segfault). Optional flags: `--to-tif` (|V| GeoTIFF), `--to-streamlines` (arrow Points), `--to-flowlines` (RK4 LineStrings).
+Downloads DEM, buildings, **LiDAR trees**, and mask via [pymdurs](https://github.com/rupeelab17/pymdurs) (France + network), then runs QES-Winds. Tree tops (`H`, `D`, `LAI`) are buffered to crown polygons for QES. Default cell size is `2.5 2.5 1` (finer grids on large bboxes may segfault). Optional flags: `--to-tif` (|V| GeoTIFF), `--to-streamlines` (arrow Points), `--to-flowlines` (RK4 LineStrings), `--no-trees` (skip vegetation), `--lai` / `--trees-resolution` / `--min-tree-height`.
 
 ```bash
 uv sync --extra geo --extra io
@@ -256,8 +301,10 @@ uv pip install pymdurs
 uv run python examples/pymdurs_workflow/run_from_bbox.py --to-tif
 uv run python examples/pymdurs_workflow/run_from_bbox.py \
   --bbox=-1.152704,46.181627,-1.139893,46.18699 --to-tif --to-streamlines --to-flowlines
-# reuse previous IGN downloads in examples/pymdurs_workflow/output/
+# reuse previous IGN / LiDAR downloads in examples/pymdurs_workflow/output/
 uv run python examples/pymdurs_workflow/run_from_bbox.py --skip-fetch --to-tif --to-flowlines
+# buildings + DEM only (no LiDAR trees)
+uv run python examples/pymdurs_workflow/run_from_bbox.py --no-trees --to-tif
 ```
 
 ---

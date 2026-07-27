@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch DEM / buildings / mask via pymdurs (IGN), then run QES-Winds.
+"""Fetch DEM / buildings / trees / mask via pymdurs (IGN), then run QES-Winds.
 
 Requires network access and a bbox in mainland France (IGN). Prerequisites::
 
@@ -11,13 +11,19 @@ Usage (from the repo root)::
     uv run python examples/pymdurs_workflow/run_from_bbox.py --to-tif
     uv run python examples/pymdurs_workflow/run_from_bbox.py \\
         --bbox=-1.152704,46.181627,-1.139893,46.18699 --to-tif --to-streamlines --to-flowlines
-    # reuse previous IGN downloads:
+    # reuse previous IGN / LiDAR downloads:
     uv run python examples/pymdurs_workflow/run_from_bbox.py --skip-fetch --to-tif
+    # skip vegetation entirely:
+    uv run python examples/pymdurs_workflow/run_from_bbox.py --no-trees --to-tif
 
 Note: fine horizontal grids (e.g. ``--cell-size 2 2 0.5``) on this default
 bbox can segfault in the native QES solver (~8M+ cells). Prefer the default
 ``2.5 2.5 1`` or coarser. Do not resample the DEM to cell size — QES crashes
 on some warped GeoTIFFs; keep the native IGN clip resolution.
+
+LiDAR tree extraction is heavier than DEM/buildings (COPC download + CHM).
+QES reads crown **polygons** (fields ``H``, ``D``, ``LAI``); point tops from
+pymdurs are buffered to circles before the run.
 """
 
 from __future__ import annotations
@@ -27,9 +33,15 @@ from pathlib import Path
 
 import geopandas as gpd
 import pymdurs
+from pymdurs.trees import run_trees
 from pyQES import pywinds
 from pyQES.util import geo
-from pyQES.util.config import SensorParameters, TimeSeries, WindsParameters
+from pyQES.util.config import (
+    SensorParameters,
+    TimeSeries,
+    VegetationParameters,
+    WindsParameters,
+)
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = HERE / "output"
@@ -37,6 +49,11 @@ DEFAULT_BBOX = (-1.152704, 46.181627, -1.139893, 46.18699)
 WORKING_CRS = 2154
 # Empirically, ~8M cells segfaults on typical laptop builds; keep a margin.
 MAX_DOMAIN_CELLS = 6_000_000
+
+TREES_POINTS_NAME = "trees_points.shp"
+TREES_QES_NAME = "trees.shp"
+TREES_LAYER = "trees"
+_TREE_REQUIRED_FIELDS = ("H", "D", "LAI")
 
 # Candidate attribute names produced by IGN / pymdurs for building height (m).
 _HEIGHT_CANDIDATES = (
@@ -67,7 +84,9 @@ def _parse_bbox(raw: str) -> tuple[float, float, float, float]:
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Download IGN DEM/buildings/mask via pymdurs, then run QES-Winds."
+        description=(
+            "Download IGN DEM/buildings/trees/mask via pymdurs, then run QES-Winds."
+        )
     )
     p.add_argument(
         "--bbox",
@@ -100,7 +119,33 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "--skip-fetch",
         action="store_true",
-        help="Reuse DEM/mask/buildings already present in --work-dir (no IGN download).",
+        help=(
+            "Reuse DEM/mask/buildings/trees already present in --work-dir "
+            "(no IGN / LiDAR download)."
+        ),
+    )
+    p.add_argument(
+        "--no-trees",
+        action="store_true",
+        help="Skip LiDAR tree fetch and omit vegetationParams.",
+    )
+    p.add_argument(
+        "--lai",
+        type=float,
+        default=4.0,
+        help="Constant LAI written to every tree (default: 4.0).",
+    )
+    p.add_argument(
+        "--trees-resolution",
+        type=float,
+        default=1.0,
+        help="CHM pixel size in metres for LiDAR tree extraction (default: 1.0).",
+    )
+    p.add_argument(
+        "--min-tree-height",
+        type=float,
+        default=2.0,
+        help="Minimum canopy height (m) for tree extraction (default: 2.0).",
     )
     p.add_argument(
         "--force",
@@ -258,15 +303,96 @@ def fetch_buildings(
     return out_shp
 
 
+def fetch_trees(
+    work_dir: Path,
+    bbox: tuple[float, float, float, float],
+    *,
+    lai: float,
+    resolution: float,
+    min_tree_height: float,
+    min_distance: int = 5,
+) -> Path:
+    """Download LiDAR CHM and write point tops ``trees_points.shp`` (EPSG:2154)."""
+    lidar = pymdurs.geometric.Lidar(output_path=str(work_dir))
+    lidar.set_bbox(*bbox)
+    lidar.set_crs(WORKING_CRS)
+    return Path(
+        run_trees(
+            lidar,
+            file_name=TREES_POINTS_NAME,
+            resolution=resolution,
+            min_tree_height=min_tree_height,
+            min_distance=min_distance,
+            lai=lai,
+        )
+    )
+
+
+def prepare_trees_shp(
+    points_shp: Path,
+    mask_shp: Path,
+    out_shp: Path,
+) -> Path | None:
+    """Convert point tops to crown polygons, clip to mask, write ``trees.shp``.
+
+    QES ``ESRIShapefile`` only keeps polygon geometries; point features are
+    ignored. Crowns are circles of radius ``D/2``. Returns ``None`` if no trees
+    remain after clipping.
+    """
+    gdf = gpd.read_file(points_shp)
+    missing = [f for f in _TREE_REQUIRED_FIELDS if f not in gdf.columns]
+    if missing:
+        raise SystemExit(
+            f"Tree shapefile missing fields {missing}. "
+            f"Got columns: {list(gdf.columns)}"
+        )
+
+    mask_gdf = gpd.read_file(mask_shp)
+    if gdf.crs is None:
+        gdf = gdf.set_crs(epsg=WORKING_CRS)
+    if mask_gdf.crs is not None and gdf.crs != mask_gdf.crs:
+        gdf = gdf.to_crs(mask_gdf.crs)
+
+    # Buffer Point → Polygon crown; leave existing polygons unchanged.
+    geom_types = set(gdf.geometry.geom_type.unique())
+    if "Point" in geom_types or "MultiPoint" in geom_types:
+        gdf = gdf.copy()
+        gdf["geometry"] = gdf.apply(
+            lambda row: (
+                row.geometry.buffer(float(row["D"]) / 2.0)
+                if row.geometry is not None
+                and row.geometry.geom_type in ("Point", "MultiPoint")
+                else row.geometry
+            ),
+            axis=1,
+        )
+
+    mask_union = mask_gdf.geometry.union_all()
+    gdf = gdf[gdf.geometry.intersects(mask_union)].copy()
+    if gdf.empty:
+        print("Warning: no trees inside mask after clip; omitting vegetation.")
+        return None
+
+    gdf = gdf[list(_TREE_REQUIRED_FIELDS) + ["geometry"]]
+    gdf.to_file(out_shp, driver="ESRI Shapefile")
+    print(f"trees (QES): {out_shp}  ({len(gdf)} crowns)")
+    return out_shp
+
+
 def resolve_inputs(
     work_dir: Path,
     bbox: tuple[float, float, float, float],
     *,
     skip_fetch: bool,
-) -> tuple[Path, Path, Path]:
-    """Return ``(dem_clip, mask, buildings)``, fetching from IGN unless skipped."""
+    no_trees: bool,
+    lai: float,
+    trees_resolution: float,
+    min_tree_height: float,
+) -> tuple[Path, Path, Path, Path | None]:
+    """Return ``(dem_clip, mask, buildings, trees)``, fetching unless skipped."""
     mask_shp = work_dir / "mask.shp"
     buildings_shp = work_dir / "buildings.shp"
+    trees_shp = work_dir / TREES_QES_NAME
     dem_clip = work_dir / "DEM_clip.tif"
     dem_2154 = work_dir / f"DEM_{WORKING_CRS}.tif"
 
@@ -279,7 +405,13 @@ def resolve_inputs(
                 "--skip-fetch requires existing files, missing: "
                 + ", ".join(str(p) for p in missing)
             )
-        return dem_clip, mask_shp, buildings_shp
+        if no_trees:
+            return dem_clip, mask_shp, buildings_shp, None
+        if not trees_shp.is_file():
+            raise SystemExit(
+                f"--skip-fetch requires {trees_shp} (or pass --no-trees)."
+            )
+        return dem_clip, mask_shp, buildings_shp, trees_shp
 
     print("Fetching DEM + mask from IGN (pymdurs)...")
     dem_tif, mask_shp = fetch_dem(work_dir, bbox)
@@ -295,7 +427,21 @@ def resolve_inputs(
     print("Fetching buildings from IGN (pymdurs)...")
     buildings_shp = fetch_buildings(work_dir, bbox)
     print(f"buildings: {buildings_shp}")
-    return dem_clip, mask_shp, buildings_shp
+
+    if no_trees:
+        return dem_clip, mask_shp, buildings_shp, None
+
+    print("Fetching trees from IGN LiDAR (pymdurs)...")
+    points_shp = fetch_trees(
+        work_dir,
+        bbox,
+        lai=lai,
+        resolution=trees_resolution,
+        min_tree_height=min_tree_height,
+    )
+    print(f"trees (pts): {points_shp}")
+    trees_out = prepare_trees_shp(points_shp, mask_shp, trees_shp)
+    return dem_clip, mask_shp, buildings_shp, trees_out
 
 
 def check_domain_size(
@@ -323,6 +469,7 @@ def run_winds(
     dem: Path,
     buildings_src: Path,
     buildings_mask: Path,
+    trees_shp: Path | None,
     work_dir: Path,
     args: argparse.Namespace,
 ) -> object:
@@ -335,6 +482,12 @@ def run_winds(
     params.simulation_parameters.domain_rotation = 0.0
     params.buildings_params.shp_height_field = "hauteur"
     params.buildings_params.shp_building_layer = "buildings_clipped"
+
+    if trees_shp is not None:
+        params.vegetation_params = VegetationParameters(
+            shp_file=str(trees_shp.resolve()),
+            shp_tree_layer=TREES_LAYER,
+        )
 
     check_domain_size(params, dem, buildings_src, force=args.force)
 
@@ -370,19 +523,30 @@ def main() -> None:
     print(f"work_dir:     {work_dir}")
     print(f"cell_size:    {tuple(args.cell_size)}")
 
-    dem_tif, mask_shp, buildings_shp = resolve_inputs(
-        work_dir, args.bbox, skip_fetch=args.skip_fetch
+    dem_tif, mask_shp, buildings_shp, trees_shp = resolve_inputs(
+        work_dir,
+        args.bbox,
+        skip_fetch=args.skip_fetch,
+        no_trees=args.no_trees,
+        lai=args.lai,
+        trees_resolution=args.trees_resolution,
+        min_tree_height=args.min_tree_height,
     )
     if args.skip_fetch:
         print(f"DEM clip:  {dem_tif}")
         print(f"mask:      {mask_shp}")
         print(f"buildings: {buildings_shp}")
+        if trees_shp is not None:
+            print(f"trees:     {trees_shp}")
+        else:
+            print("trees:     (none)")
 
     print("Running QES-Winds...")
     result = run_winds(
         dem=dem_tif,
         buildings_src=buildings_shp,
         buildings_mask=mask_shp,
+        trees_shp=trees_shp,
         work_dir=work_dir,
         args=args,
     )

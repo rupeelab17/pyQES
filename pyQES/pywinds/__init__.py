@@ -88,6 +88,8 @@ def _apply_overrides(params: WindsParameters, overrides: dict[str, Any]) -> None
         params.buildings_params,
         params.file_options,
     ]
+    if params.vegetation_params is not None:
+        submodels.append(params.vegetation_params)
     if params.turb_params is not None:
         submodels.append(params.turb_params)
 
@@ -183,6 +185,11 @@ def _preprocess(
     elif params.buildings_params.shp_file is not None:
         params.buildings_params.shp_file = _absolute(params.buildings_params.shp_file, base_dir)
 
+    if params.vegetation_params is not None and params.vegetation_params.shp_file is not None:
+        params.vegetation_params.shp_file = _absolute(
+            params.vegetation_params.shp_file, base_dir
+        )
+
     origin = geo.compute_domain_origin_from_dem(dem)
     sim.utm_x = origin.utm_x
     sim.utm_y = origin.utm_y
@@ -213,6 +220,10 @@ def _finalize_paths(
         sim.dem = _absolute(sim.dem, base_dir)
     if params.buildings_params.shp_file is not None:
         params.buildings_params.shp_file = _absolute(params.buildings_params.shp_file, base_dir)
+    if params.vegetation_params is not None and params.vegetation_params.shp_file is not None:
+        params.vegetation_params.shp_file = _absolute(
+            params.vegetation_params.shp_file, base_dir
+        )
 
     pairs = _collect_sensors(sensor, params, base_dir)
     return _write_sensors(pairs, work_dir, params)

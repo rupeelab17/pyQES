@@ -10,11 +10,14 @@ from . import geo  # noqa: F401  (re-exported module)
 from .config import (
     BuildingsParams,
     FileOptions,
+    Homogeneous,
+    IsolatedTree,
     MetParams,
     SensorParameters,
     SimulationParameters,
     TimeSeries,
     TurbParams,
+    VegetationParameters,
     WindsParameters,
 )
 from .paths import resolve_path, resolve_work_dir
@@ -31,6 +34,9 @@ __all__ = [
     "SimulationParameters",
     "MetParams",
     "BuildingsParams",
+    "Homogeneous",
+    "IsolatedTree",
+    "VegetationParameters",
     "TurbParams",
     "FileOptions",
     "WindsParameters",

@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "pyqes"
-version = "2.4.0"
+version = "2.5.0"
 description = "Python wrapper for the Quick Environmental Simulation (QES) suite: QES-Winds, QES-Plume and QES-Fire."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"

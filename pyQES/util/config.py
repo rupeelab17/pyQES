@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class QESModel(BaseModel):
@@ -109,6 +109,82 @@ class TurbParams(QESModel):
     method: int = Field(default=0, alias="method")
 
 
+class Homogeneous(QESModel):
+    """`<Homogeneous>` canopy — uniform Cionco exponential drag.
+
+    Footprint is either a rectangle (``x_start`` / ``y_start`` / ``length`` /
+    ``width`` / ``canopy_rotation``) or a polygon (paired ``x_vertex`` /
+    ``y_vertex`` lists). No per-tree structure or wake — mean attenuation only.
+    """
+
+    attenuation_coefficient: float = Field(..., alias="attenuationCoefficient")
+    height: float = Field(..., alias="height")
+    base_height: float = Field(default=0.0, alias="baseHeight")
+
+    x_start: float | None = Field(default=None, alias="xStart")
+    y_start: float | None = Field(default=None, alias="yStart")
+    length: float | None = Field(default=None, alias="length")
+    width: float | None = Field(default=None, alias="width")
+    canopy_rotation: float | None = Field(default=None, alias="canopyRotation")
+
+    x_vertex: list[float] = Field(default_factory=list, alias="xVertex")
+    y_vertex: list[float] = Field(default_factory=list, alias="yVertex")
+
+    _wrap_x_vertex = field_validator("x_vertex", mode="before")(_as_list)
+    _wrap_y_vertex = field_validator("y_vertex", mode="before")(_as_list)
+
+    @model_validator(mode="after")
+    def _require_footprint(self) -> Homogeneous:
+        rect = (self.length is not None and self.length > 0.0) and (
+            self.width is not None and self.width > 0.0
+        )
+        poly = len(self.x_vertex) > 0 and len(self.y_vertex) > 0
+        if not rect and not poly:
+            raise ValueError(
+                "Homogeneous needs a rectangle (length/width > 0) "
+                "or a polygon (x_vertex/y_vertex)"
+            )
+        if poly and len(self.x_vertex) != len(self.y_vertex):
+            raise ValueError("x_vertex and y_vertex must have the same length")
+        return self
+
+
+class IsolatedTree(QESModel):
+    """`<IsolatedTree>` canopy (circular crown, Margairaz 2021 / Lee et al.)."""
+
+    attenuation_coefficient: float = Field(..., alias="attenuationCoefficient")
+    height: float = Field(..., alias="height")
+    z_max_lai: float = Field(..., alias="zMaxLAI")
+    base_height: float = Field(default=0.0, alias="baseHeight")
+    x_center: float = Field(..., alias="xCenter")
+    y_center: float = Field(..., alias="yCenter")
+    width: float = Field(..., alias="width")
+
+
+class VegetationParameters(QESModel):
+    """`<vegetationParams>` block: canopies and/or a tree shapefile.
+
+    - :class:`Homogeneous` — uniform Cionco canopy (rectangle or polygon).
+    - :class:`IsolatedTree` — one XML block per tree.
+    - Point shapefile via ``SHPFile`` / ``SHPTreeLayer`` (fields ``H``, ``D``,
+      ``LAI``).
+    """
+
+    wake_flag: int = Field(default=1, alias="wakeFlag")
+    num_canopies: int | None = Field(default=None, alias="num_canopies")
+    shp_file: str | None = Field(default=None, alias="SHPFile")
+    shp_tree_layer: str | None = Field(default=None, alias="SHPTreeLayer")
+    homogeneous: list[Homogeneous] = Field(
+        default_factory=list, alias="Homogeneous"
+    )
+    isolated_trees: list[IsolatedTree] = Field(
+        default_factory=list, alias="IsolatedTree"
+    )
+
+    _wrap_homogeneous = field_validator("homogeneous", mode="before")(_as_list)
+    _wrap_trees = field_validator("isolated_trees", mode="before")(_as_list)
+
+
 class FileOptions(QESModel):
     """`<fileOptions>` block: NetCDF output configuration."""
 
@@ -127,6 +203,9 @@ class WindsParameters(QESModel):
     met_params: MetParams = Field(default_factory=MetParams, alias="metParams")
     buildings_params: BuildingsParams = Field(
         default_factory=BuildingsParams, alias="buildingsParams"
+    )
+    vegetation_params: VegetationParameters | None = Field(
+        default=None, alias="vegetationParams"
     )
     turb_params: TurbParams | None = Field(default=None, alias="turbParams")
     file_options: FileOptions = Field(default_factory=FileOptions, alias="fileOptions")
